@@ -1,0 +1,40 @@
+---
+title: "Guide to Spark Machine Learning for credit scoring"
+author: "Álvaro Orgaz Expósito"
+date: "29 June 2018"
+output: html_document
+---
+
+# 5. PROTOCOL OF MODEL VALIDATION PHASE 1: Create training and test sets as well as training folds for CV
+
+Read the Spark data frame with the pre-processed data in a local file with format Parquet
+```{r}
+data <- spark_read_parquet(sc_sparklyr,"data","data.parquet")
+```
+
+Create training and test datasets (75%-25%)
+```{r}
+data_partitions <- data %>% compute("data_partitions") %>% sdf_partition(train=0.75,test=0.25,seed=1)
+```
+
+Create K folds or partitions from training data for Cross-Validation
+```{r}
+K <- 5
+weights <- rep(1/K,times = K)
+names(weights) <- paste0("Fold ",as.character(1:K))
+train_partitions <- data_partitions$train %>% compute("train_partitions") %>% 
+  sdf_partition(weights=weights,seed=1) 
+```
+
+Check that all categories in the test set are included in the training set
+```{r}
+for(i in categorical[-which(categorical=="Contract_ID")]){
+  cat("Does the variable ",i," have the same categories in training and test sets?","\n")
+  cat(sum(!unique(as.data.frame(collect(data_partitions$test))[,i]) %in% 
+           unique(as.data.frame(collect(data_partitions$train))[,i]))==0,"\n")
+}
+```
+
+Notes:
+
+- **N7.** The function "sdf_partition" returns a list with as much Spark datasets as you define. The fold weights are the probabilities of being in every fold for the observations, and they do not mean the fold size.

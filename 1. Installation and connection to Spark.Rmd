@@ -1,0 +1,60 @@
+---
+title: "Guide to Spark Machine Learning for credit scoring"
+author: "Álvaro Orgaz Expósito"
+date: "29 June 2018"
+output: html_document
+---
+
+# 1. INSTALLATION AND CONNECTION TO SPARK
+
+Notes:
+
+- **N1.** As the package *SparkR* is removed from R CRAN, download the package file *SparkR_2.3.0.tar.gz* at the link: https://cran.r-project.org/src/contrib/Archive/SparkR/
+
+- **N2.** You will need to have installed the software Java and the firewall unblocked.
+
+- **N3.** The function *sparkR.init* of the package *SparkR* will install the latest version of Spark in your computer (if not installed), then it is not necessary that you do it manually. It will be used too by the function *spark_connect* of the package *sparklyr*.
+
+Mute warnings
+```{r}
+options(warn=-1)
+```
+
+Install the necessary R packages from R CRAN (if not installed): *dplyr*, *sparklyr*, *pROC*, *DBI*
+```{r}
+install.packages("dplyr")
+install.packages("sparklyr")
+install.packages("pROC")
+install.packages("DBI")
+install.packages("ggplot2")
+```
+
+Install the necessary R package removed from R CRAN (if not installed) : *SparkR*
+```{r}
+install.packages("SparkR_2.3.0.tar.gz",repos=NULL,type="source")
+```
+
+Load the necessary installed packages
+```{r}
+library(SparkR)
+library(dplyr)
+library(sparklyr)
+library(pROC)
+library(DBI)
+library(ggplot2)
+```
+
+Connect to Spark cluster in local mode (package *SparkR*)
+```{r}
+sc_SparkR <- sparkR.init(master="local")
+sc_SparkR_sql <- sparkRSQL.init(sc_SparkR)
+```
+
+Connect to Spark cluster in local mode (package *sparklyr*)
+```{r}
+sc_sparklyr <- spark_connect(master="local")
+```
+
+Notes:
+
+- **N4.** You can connect to both local instances of Spark as well as remote Spark clusters but we will connect to a local. The returned Spark connection (sc) provides a remote data source to the Spark cluster. Once you have connected to Spark, you will be able to browse the tables contained in the Spark cluster and also, in the case of the package *sparklyr*, preview Spark data frames using the RStudio data viewer.

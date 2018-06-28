@@ -1,0 +1,126 @@
+---
+title: "Guide to Spark Machine Learning for credit scoring"
+author: "Álvaro Orgaz Expósito"
+date: "29 June 2018"
+output: html_document
+---
+
+# 8. PROTOCOL OF MODEL VALIDATION PHASE 4: Compare the models with performance measures
+
+Save and print the results table of the training set
+```{r}
+save(results_optimals_train,file="results_optimals_train.RData")
+results_optimals_train
+```
+
+Save and print the results table of the test set
+```{r}
+save(results_optimals_test,file="results_optimals_test.RData")
+results_optimals_test
+```
+
+# 8.1 PRINCIPAL COMPONENTS ANALYSIS
+
+Merge the training and test sets
+```{r}
+data_pca <- rbind(data_partitions$train,data_partitions$test)
+```
+
+Normalize numerical variables for PCA
+```{r}
+data_pca <- data_pca %>% mutate(
+  Amount=(Amount-mean(Amount))/sd(Amount),
+  Maturity=(Maturity-mean(Maturity))/sd(Maturity),
+  Postal_Code_ASNEF=(Postal_Code_ASNEF-mean(Postal_Code_ASNEF))/sd(Postal_Code_ASNEF),
+  Age=(Age-mean(Age))/sd(Age),
+  Seniority=(Seniority-mean(Seniority))/sd(Seniority),
+  Housing_Seniority=(Housing_Seniority-mean(Housing_Seniority))/sd(Housing_Seniority),
+  Income=(Income-mean(Income))/sd(Income),
+  Additional_Income=(Additional_Income-mean(Additional_Income))/sd(Additional_Income),
+  Rent=(Rent-mean(Rent))/sd(Rent),
+  Partner_Income=(Partner_Income-mean(Partner_Income))/sd(Partner_Income),
+  Mortgage=(Mortgage-mean(Mortgage))/sd(Mortgage),
+  Amount_of_Ongoing_Credits=(Amount_of_Ongoing_Credits-mean(Amount_of_Ongoing_Credits))/
+    sd(Amount_of_Ongoing_Credits))
+```
+
+Run PCA and project every observation into the new space
+```{r}
+pca <- data_pca %>% ml_pca(k=2,features=features_num)
+pca_projections <- as.data.frame(pca %>% sdf_project() %>% select(PC1,PC2))
+```
+
+Plot the 2 main principal components
+```{r}
+ggplot(as.data.frame(pca$pc),aes(PC1,PC2)) +
+  geom_text(aes(label=row.names(pca$pc)),size=3,alpha=1,vjust =-1,hjust=0.5) +
+  geom_segment(aes(x=0,xend=PC1,y=0,yend=PC2),arrow=arrow(length=unit(0.3,"cm")),col="darkblue") +
+  labs(title="PCA",
+       x=paste("PC1:",round(pca$explained_variance[1]*100,2),"% projected variance"),
+       y=paste("PC2:",round(pca$explained_variance[2]*100,2),"% projected variance"))
+```
+
+Plot PCA projections coloured by predictions of the models
+```{r}
+# Plot PCA projections coloured by predictions of the model Logistic Regression
+Prediction_LR <- c(pred_LR_train,pred_LR_test)
+ggplot(pca_projections,aes(PC1,PC2,color=Prediction_LR)) +
+  geom_point() + scale_colour_gradient(low="green",high="red") +
+  xlim(-5,5) + ylim(-5,4) + 
+  labs(title="PCA Projections: Model Logistic Regression",
+       x=paste("PC1:",round(pca$explained_variance[1]*100,2),"% variance"),
+       y=paste("PC2:",round(pca$explained_variance[2]*100,2),"% variance"))
+
+# Plot PCA projections coloured by predictions of the model Decision Tree
+Prediction_DT <- c(pred_DT_train,pred_DT_test)
+ggplot(pca_projections,aes(PC1,PC2,color=Prediction_DT)) +
+  geom_point() + scale_colour_gradient(low="green",high="red") +
+  xlim(-5,5) + ylim(-5,4) + 
+  labs(title="PCA Projections: Model Decision Tree",
+       x=paste("PC1:",round(pca$explained_variance[1]*100,2),"% variance"),
+       y=paste("PC2:",round(pca$explained_variance[2]*100,2),"% variance"))
+
+# Plot PCA projections coloured by predictions of the model Random Forest
+Prediction_RF <- c(pred_RF_train,pred_RF_test)
+ggplot(pca_projections,aes(PC1,PC2,color=Prediction_RF)) +
+  geom_point() + scale_colour_gradient(low="green",high="red") +
+  xlim(-5,5) + ylim(-5,4) + 
+  labs(title="PCA Projections: Model Random Forest",
+       x=paste("PC1:",round(pca$explained_variance[1]*100,2),"% variance"),
+       y=paste("PC2:",round(pca$explained_variance[2]*100,2),"% variance"))
+
+# Plot PCA projections coloured by predictions of the model Gradient Boosted Trees
+Prediction_GBT <- c(pred_GBT_train,pred_GBT_test)
+ggplot(pca_projections,aes(PC1,PC2,color=Prediction_GBT)) +
+  geom_point() + scale_colour_gradient(low="green",high="red") +
+  xlim(-5,5) + ylim(-5,4) + 
+  labs(title="PCA Projections: Model Gradient Boosted Trees",
+       x=paste("PC1:",round(pca$explained_variance[1]*100,2),"% variance"),
+       y=paste("PC2:",round(pca$explained_variance[2]*100,2),"% variance"))
+
+# Plot PCA projections coloured by predictions of the model Naive Bayes
+Prediction_NB <- c(pred_NB_train,pred_NB_test)
+ggplot(pca_projections,aes(PC1,PC2,color=Prediction_NB)) +
+  geom_point() + scale_colour_gradient(low="green",high="red") +
+  xlim(-5,5) + ylim(-5,4) + 
+  labs(title="PCA Projections: Model Naive Bayes",
+       x=paste("PC1:",round(pca$explained_variance[1]*100,2),"% variance"),
+       y=paste("PC2:",round(pca$explained_variance[2]*100,2),"% variance"))
+
+# Plot PCA projections coloured by predictions of the model Multilayer Perceptron
+Prediction_NN <- c(pred_NN_train,pred_NN_test)
+ggplot(pca_projections,aes(PC1,PC2,color=Prediction_NN)) +
+  geom_point() + scale_colour_gradient(low="green",high="red") +
+  xlim(-5,5) + ylim(-5,4) + 
+  labs(title="PCA Projections: Model Multilayer Perceptron",
+       x=paste("PC1:",round(pca$explained_variance[1]*100,2),"% variance"),
+       y=paste("PC2:",round(pca$explained_variance[2]*100,2),"% variance"))
+```
+
+# 9. DISCONNECTION OF SPARK CLUSTERS
+
+Disconnect the Spark session of both "SparkR" and "sparklyr" packages
+```{r}
+spark_disconnect(sc_sparklyr)
+sparkR.session.stop()
+```

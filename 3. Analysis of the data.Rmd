@@ -1,0 +1,40 @@
+---
+title: "Guide to Spark Machine Learning for credit scoring"
+author: "Álvaro Orgaz Expósito"
+date: "29 June 2018"
+output: html_document
+---
+
+# 3. ANALYSIS OF THE DATA VARIABLES BEFORE PRE-PROCESSING
+
+Balanced or unbalanced dataset?
+```{r}
+count(filter(data,Defaulted==1))  ### 705 = 20.33%
+count(filter(data,Defaulted==0))  ### 2763 = 79.67% 
+```
+
+Variables by type
+```{r}
+variables_type <- sdf_schema(data)
+variables_type <- data.frame(Variable=names(variables_type),
+                             Type=as.vector(unlist(sapply(names(variables_type),
+                                                          function(i){variables_type[[i]][2]}))))
+categorical <- variables_type[variables_type$Type=="StringType","Variable"]
+numerical <- variables_type[variables_type$Type=="DoubleType","Variable"]
+variables_type
+```
+
+Missing values by variables
+```{r}
+missings <- collect(data %>% mutate_all(is.na) %>% mutate_all(as.numeric) %>% summarize_all(sum))
+missings <- data.frame(Variable=names(missings),Number_of_missings=as.vector(t(missings)))
+missings[missings$Number_of_missings>0,]
+```
+
+Categories with frequency distribution <5% in its variable
+```{r}
+for(i in categorical[-which(categorical=="Contract_ID")]){
+  show(dbGetQuery(sc_sparklyr,paste0("SELECT ",i,",COUNT(*)/3468 AS Distribution FROM data GROUP BY ",
+                                     i," ORDER BY Distribution DESC")))
+}
+```

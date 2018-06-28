@@ -1,0 +1,555 @@
+---
+title: "Guide to Spark Machine Learning for credit scoring"
+author: "Álvaro Orgaz Expósito"
+date: "29 June 2018"
+output: html_document
+---
+
+# 7. PROTOCOL OF MODEL VALIDATION PHASE 3: Train models with optimal parametrizations
+
+Create target variable of training and test sets
+```{r}
+response_train <- data.frame(collect(data_partitions$train %>% select(Defaulted)))[,"Defaulted"]
+response_test <- data.frame(collect(data_partitions$test %>% select(Defaulted)))[,"Defaulted"]
+```
+
+Create the training and test sets in "SparkR" package format
+```{r}
+train_SparkR <- createDataFrame(sc_SparkR_sql,as.data.frame(collect(data_partitions$train)))
+test_SparkR <- createDataFrame(sc_SparkR_sql,as.data.frame(collect(data_partitions$test)))
+```
+
+Create the results table, one for training and one for test
+```{r}
+metrics_names <- c("Sensitivity + Specificity","Accuracy","AUC","% True + Q1","% True + Q2",
+                   "% True + Q3","% True + Q4")
+row.names <- c(paste0("Criteria: ",metrics_names),paste0("Cut-off: ",metrics_names[-3]))
+results_optimals_train <- data.frame(row.names=row.names)
+results_optimals_test <- data.frame(row.names=row.names)
+```
+
+# 7.1 LOGISTIC REGRESSION
+
+Train the optimal model with all training set
+```{r}
+model_LR <- ml_logistic_regression(data_partitions$train,
+                                   response=response,
+                                   features=c(features_num,features_cat))
+```
+
+Predict training data
+```{r}
+pred_LR_train <- sdf_predict(data_partitions$train,model_LR)
+pred_LR_train <- data.frame(collect(pred_LR_train %>% select(probability_1)))[,"probability_1"]
+```
+
+Predict test data
+```{r}
+pred_LR_test <- sdf_predict(data_partitions$test,model_LR)
+pred_LR_test <- data.frame(collect(pred_LR_test %>% select(probability_1)))[,"probability_1"]
+```
+
+Iterate all possible cut-offs and calculate performance measures in training set
+```{r}
+m1_LR_train <- c()
+m2_LR_train <- c()
+lowest <- trunc(min(pred_LR_train)*100)/100+0.01
+highest <- trunc(max(pred_LR_train)*100)/100
+for(c in seq(lowest,highest,0.01)){
+  table_LR_train_c <- table(Real=response_train,Predicted=ifelse(pred_LR_train>=c,"1","0"))
+  m1_LR_train <- c(m1_LR_train,table_LR_train_c[2,2]/sum(table_LR_train_c[2,]) +
+                               table_LR_train_c[1,1]/sum(table_LR_train_c[1,]))
+  m2_LR_train <- c(m2_LR_train,sum(diag(table_LR_train_c))/sum(table_LR_train_c))
+}
+cutoffs_LR_train <- quantile(pred_LR_train,seq(0.25,1,0.25))
+quartiles_LR_train <- ifelse(pred_LR_train<=cutoffs_LR_train[1],"Q1",
+                             ifelse(pred_LR_train<=cutoffs_LR_train[2],"Q2",
+                                    ifelse(pred_LR_train<=cutoffs_LR_train[3],"Q3","Q4")))
+results_optimals_train[1,"LR"] <- max(m1_LR_train)
+results_optimals_train[2,"LR"] <- max(m2_LR_train)
+results_optimals_train[3,"LR"] <- auc(roc(response_train,pred_LR_train))
+results_optimals_train[4,"LR"] <- mean(response_train[quartiles_LR_train=="Q1"]==1)
+results_optimals_train[5,"LR"] <- mean(response_train[quartiles_LR_train=="Q2"]==1)
+results_optimals_train[6,"LR"] <- mean(response_train[quartiles_LR_train=="Q3"]==1)
+results_optimals_train[7,"LR"] <- mean(response_train[quartiles_LR_train=="Q4"]==1)
+results_optimals_train[8,"LR"] <- seq(lowest,highest,0.01)[which(m1_LR_train==max(m1_LR_train))[1]]
+results_optimals_train[9,"LR"] <- seq(lowest,highest,0.01)[which(m2_LR_train==max(m2_LR_train))[1]]
+results_optimals_train[10,"LR"] <- cutoffs_LR_train[1]
+results_optimals_train[11,"LR"] <- cutoffs_LR_train[2]
+results_optimals_train[12,"LR"] <- cutoffs_LR_train[3]
+results_optimals_train[13,"LR"] <- cutoffs_LR_train[4]
+```
+
+Iterate all possible cut-offs and calculate performance measures in test set
+```{r}
+m1_LR_test <- c()
+m2_LR_test <- c()
+lowest <- trunc(min(pred_LR_test)*100)/100+0.01
+highest <- trunc(max(pred_LR_test)*100)/100
+for(c in seq(lowest,highest,0.01)){
+  table_LR_test_c <- table(Real=response_test,Predicted=ifelse(pred_LR_test>=c,"1","0"))
+  m1_LR_test <- c(m1_LR_test,table_LR_test_c[2,2]/sum(table_LR_test_c[2,]) +
+                     table_LR_test_c[1,1]/sum(table_LR_test_c[1,]))
+  m2_LR_test <- c(m2_LR_test,sum(diag(table_LR_test_c))/sum(table_LR_test_c))
+}
+cutoffs_LR_test <- quantile(pred_LR_test,seq(0.25,1,0.25))
+quartiles_LR_test <- ifelse(pred_LR_test<=cutoffs_LR_test[1],"Q1",
+                             ifelse(pred_LR_test<=cutoffs_LR_test[2],"Q2",
+                                    ifelse(pred_LR_test<=cutoffs_LR_test[3],"Q3","Q4")))
+results_optimals_test[1,"LR"] <- max(m1_LR_test)
+results_optimals_test[2,"LR"] <- max(m2_LR_test)
+results_optimals_test[3,"LR"] <- auc(roc(response_test,pred_LR_test))
+results_optimals_test[4,"LR"] <- mean(response_test[quartiles_LR_test=="Q1"]==1)
+results_optimals_test[5,"LR"] <- mean(response_test[quartiles_LR_test=="Q2"]==1)
+results_optimals_test[6,"LR"] <- mean(response_test[quartiles_LR_test=="Q3"]==1)
+results_optimals_test[7,"LR"] <- mean(response_test[quartiles_LR_test=="Q4"]==1)
+results_optimals_test[8,"LR"] <- seq(lowest,highest,0.01)[which(m1_LR_test==max(m1_LR_test))[1]]
+results_optimals_test[9,"LR"] <- seq(lowest,highest,0.01)[which(m2_LR_test==max(m2_LR_test))[1]]
+results_optimals_test[10,"LR"] <- cutoffs_LR_test[1]
+results_optimals_test[11,"LR"] <- cutoffs_LR_test[2]
+results_optimals_test[12,"LR"] <- cutoffs_LR_test[3]
+results_optimals_test[13,"LR"] <- cutoffs_LR_test[4]
+```
+
+# 7.2 DECISION TREE
+
+Train the optimal model with all training set
+```{r}
+model_DT <- ml_decision_tree(data_partitions$train,
+                             type="classification",
+                             response=response,
+                             features=c(features_num,features_cat),
+                             max_bins=30,
+                             max_depth=5,
+                             min_instances_per_node=5,
+                             seed=1)
+```
+
+Predict training data
+```{r}
+pred_DT_train <- sdf_predict(data_partitions$train,model_DT)
+pred_DT_train <- data.frame(collect(pred_DT_train %>% select(probability_1)))[,"probability_1"]
+```
+
+Predict test data
+```{r}
+pred_DT_test <- sdf_predict(data_partitions$test,model_DT)
+pred_DT_test <- data.frame(collect(pred_DT_test %>% select(probability_1)))[,"probability_1"]
+```
+ 
+Iterate all possible cut-offs and calculate performance measures in training set
+```{r}
+m1_DT_train <- c()
+m2_DT_train <- c()
+lowest <- trunc(min(pred_DT_train)*100)/100+0.01
+highest <- trunc(max(pred_DT_train)*100)/100
+for(c in seq(lowest,highest,0.01)){
+  table_DT_train_c <- table(Real=response_train,Predicted=ifelse(pred_DT_train>=c,"1","0"))
+  m1_DT_train <- c(m1_DT_train,table_DT_train_c[2,2]/sum(table_DT_train_c[2,]) +
+                     table_DT_train_c[1,1]/sum(table_DT_train_c[1,]))
+  m2_DT_train <- c(m2_DT_train,sum(diag(table_DT_train_c))/sum(table_DT_train_c))
+}
+cutoffs_DT_train <- quantile(pred_DT_train,seq(0.25,1,0.25))
+quartiles_DT_train <- ifelse(pred_DT_train<=cutoffs_DT_train[1],"Q1",
+                             ifelse(pred_DT_train<=cutoffs_DT_train[2],"Q2",
+                                    ifelse(pred_DT_train<=cutoffs_DT_train[3],"Q3","Q4")))
+results_optimals_train[1,"DT"] <- max(m1_DT_train)
+results_optimals_train[2,"DT"] <- max(m2_DT_train)
+results_optimals_train[3,"DT"] <- auc(roc(response_train,pred_DT_train))
+results_optimals_train[4,"DT"] <- mean(response_train[quartiles_DT_train=="Q1"]==1)
+results_optimals_train[5,"DT"] <- mean(response_train[quartiles_DT_train=="Q2"]==1)
+results_optimals_train[6,"DT"] <- mean(response_train[quartiles_DT_train=="Q3"]==1)
+results_optimals_train[7,"DT"] <- mean(response_train[quartiles_DT_train=="Q4"]==1)
+results_optimals_train[8,"DT"] <- seq(lowest,highest,0.01)[which(m1_DT_train==max(m1_DT_train))[1]]
+results_optimals_train[9,"DT"] <- seq(lowest,highest,0.01)[which(m2_DT_train==max(m2_DT_train))[1]]
+results_optimals_train[10,"DT"] <- cutoffs_DT_train[1]
+results_optimals_train[11,"DT"] <- cutoffs_DT_train[2]
+results_optimals_train[12,"DT"] <- cutoffs_DT_train[3]
+results_optimals_train[13,"DT"] <- cutoffs_DT_train[4]
+```
+
+Iterate all possible cut-offs and calculate performance measures in test set
+```{r}
+m1_DT_test <- c()
+m2_DT_test <- c()
+lowest <- trunc(min(pred_DT_test)*100)/100+0.01
+highest <- trunc(max(pred_DT_test)*100)/100
+for(c in seq(lowest,highest,0.01)){
+  table_DT_test_c <- table(Real=response_test,Predicted=ifelse(pred_DT_test>=c,"1","0"))
+  m1_DT_test <- c(m1_DT_test,table_DT_test_c[2,2]/sum(table_DT_test_c[2,]) +
+                    table_DT_test_c[1,1]/sum(table_DT_test_c[1,]))
+  m2_DT_test <- c(m2_DT_test,sum(diag(table_DT_test_c))/sum(table_DT_test_c))
+}
+cutoffs_DT_test <- quantile(pred_DT_test,seq(0.25,1,0.25))
+quartiles_DT_test <- ifelse(pred_DT_test<=cutoffs_DT_test[1],"Q1",
+                            ifelse(pred_DT_test<=cutoffs_DT_test[2],"Q2",
+                                   ifelse(pred_DT_test<=cutoffs_DT_test[3],"Q3","Q4")))
+results_optimals_test[1,"DT"] <- max(m1_DT_test)
+results_optimals_test[2,"DT"] <- max(m2_DT_test)
+results_optimals_test[3,"DT"] <- auc(roc(response_test,pred_DT_test))
+results_optimals_test[4,"DT"] <- mean(response_test[quartiles_DT_test=="Q1"]==1)
+results_optimals_test[5,"DT"] <- mean(response_test[quartiles_DT_test=="Q2"]==1)
+results_optimals_test[6,"DT"] <- mean(response_test[quartiles_DT_test=="Q3"]==1)
+results_optimals_test[7,"DT"] <- mean(response_test[quartiles_DT_test=="Q4"]==1)
+results_optimals_test[8,"DT"] <- seq(lowest,highest,0.01)[which(m1_DT_test==max(m1_DT_test))[1]]
+results_optimals_test[9,"DT"] <- seq(lowest,highest,0.01)[which(m2_DT_test==max(m2_DT_test))[1]]
+results_optimals_test[10,"DT"] <- cutoffs_DT_test[1]
+results_optimals_test[11,"DT"] <- cutoffs_DT_test[2]
+results_optimals_test[12,"DT"] <- cutoffs_DT_test[3]
+results_optimals_test[13,"DT"] <- cutoffs_DT_test[4]
+```
+
+# 7.3 RANDOM FOREST
+
+Train the optimal model with all training set
+```{r}
+model_RF <- ml_random_forest(data_partitions$train,
+                             type="classification",
+                             response=response,
+                             features=c(features_num,features_cat),
+                             max_bins=30,
+                             max_depth=5,
+                             num_trees=30,
+                             min_instances_per_node=9,
+                             subsampling_rate=1,
+                             seed=1)
+```
+
+Predict training data
+```{r}
+pred_RF_train <- sdf_predict(data_partitions$train,model_RF)
+pred_RF_train <- data.frame(collect(pred_RF_train %>% select(probability_1)))[,"probability_1"]
+```
+
+Predict test data
+```{r}
+pred_RF_test <- sdf_predict(data_partitions$test,model_RF)
+pred_RF_test <- data.frame(collect(pred_RF_test %>% select(probability_1)))[,"probability_1"]
+```
+
+Iterate all possible cut-offs and calculate performance measures in training set
+```{r}
+m1_RF_train <- c()
+m2_RF_train <- c()
+lowest <- trunc(min(pred_RF_train)*100)/100+0.01
+highest <- trunc(max(pred_RF_train)*100)/100
+for(c in seq(lowest,highest,0.01)){
+  table_RF_train_c <- table(Real=response_train,Predicted=ifelse(pred_RF_train>=c,"1","0"))
+  m1_RF_train <- c(m1_RF_train,table_RF_train_c[2,2]/sum(table_RF_train_c[2,]) +
+                     table_RF_train_c[1,1]/sum(table_RF_train_c[1,]))
+  m2_RF_train <- c(m2_RF_train,sum(diag(table_RF_train_c))/sum(table_RF_train_c))
+}
+cutoffs_RF_train <- quantile(pred_RF_train,seq(0.25,1,0.25))
+quartiles_RF_train <- ifelse(pred_RF_train<=cutoffs_RF_train[1],"Q1",
+                             ifelse(pred_RF_train<=cutoffs_RF_train[2],"Q2",
+                                    ifelse(pred_RF_train<=cutoffs_RF_train[3],"Q3","Q4")))
+results_optimals_train[1,"RF"] <- max(m1_RF_train)
+results_optimals_train[2,"RF"] <- max(m2_RF_train)
+results_optimals_train[3,"RF"] <- auc(roc(response_train,pred_RF_train))
+results_optimals_train[4,"RF"] <- mean(response_train[quartiles_RF_train=="Q1"]==1)
+results_optimals_train[5,"RF"] <- mean(response_train[quartiles_RF_train=="Q2"]==1)
+results_optimals_train[6,"RF"] <- mean(response_train[quartiles_RF_train=="Q3"]==1)
+results_optimals_train[7,"RF"] <- mean(response_train[quartiles_RF_train=="Q4"]==1)
+results_optimals_train[8,"RF"] <- seq(lowest,highest,0.01)[which(m1_RF_train==max(m1_RF_train))[1]]
+results_optimals_train[9,"RF"] <- seq(lowest,highest,0.01)[which(m2_RF_train==max(m2_RF_train))[1]]
+results_optimals_train[10,"RF"] <- cutoffs_RF_train[1]
+results_optimals_train[11,"RF"] <- cutoffs_RF_train[2]
+results_optimals_train[12,"RF"] <- cutoffs_RF_train[3]
+results_optimals_train[13,"RF"] <- cutoffs_RF_train[4]
+```
+
+Iterate all possible cut-offs and calculate performance measures in test set
+```{r}
+m1_RF_test <- c()
+m2_RF_test <- c()
+lowest <- trunc(min(pred_RF_test)*100)/100+0.01
+highest <- trunc(max(pred_RF_test)*100)/100
+for(c in seq(lowest,highest,0.01)){
+  table_RF_test_c <- table(Real=response_test,Predicted=ifelse(pred_RF_test>=c,"1","0"))
+  m1_RF_test <- c(m1_RF_test,table_RF_test_c[2,2]/sum(table_RF_test_c[2,]) +
+                    table_RF_test_c[1,1]/sum(table_RF_test_c[1,]))
+  m2_RF_test <- c(m2_RF_test,sum(diag(table_RF_test_c))/sum(table_RF_test_c))
+}
+cutoffs_RF_test <- quantile(pred_RF_test,seq(0.25,1,0.25))
+quartiles_RF_test <- ifelse(pred_RF_test<=cutoffs_RF_test[1],"Q1",
+                            ifelse(pred_RF_test<=cutoffs_RF_test[2],"Q2",
+                                   ifelse(pred_RF_test<=cutoffs_RF_test[3],"Q3","Q4")))
+results_optimals_test[1,"RF"] <- max(m1_RF_test)
+results_optimals_test[2,"RF"] <- max(m2_RF_test)
+results_optimals_test[3,"RF"] <- auc(roc(response_test,pred_RF_test))
+results_optimals_test[4,"RF"] <- mean(response_test[quartiles_RF_test=="Q1"]==1)
+results_optimals_test[5,"RF"] <- mean(response_test[quartiles_RF_test=="Q2"]==1)
+results_optimals_test[6,"RF"] <- mean(response_test[quartiles_RF_test=="Q3"]==1)
+results_optimals_test[7,"RF"] <- mean(response_test[quartiles_RF_test=="Q4"]==1)
+results_optimals_test[8,"RF"] <- seq(lowest,highest,0.01)[which(m1_RF_test==max(m1_RF_test))[1]]
+results_optimals_test[9,"RF"] <- seq(lowest,highest,0.01)[which(m2_RF_test==max(m2_RF_test))[1]]
+results_optimals_test[10,"RF"] <- cutoffs_RF_test[1]
+results_optimals_test[11,"RF"] <- cutoffs_RF_test[2]
+results_optimals_test[12,"RF"] <- cutoffs_RF_test[3]
+results_optimals_test[13,"RF"] <- cutoffs_RF_test[4]
+```
+
+# 7.4  GRADIENT BOOSTED TREES
+
+Train the optimal model with all training set
+```{r}
+formula <- as.formula(paste(response,"~",paste(c(features_num,features_cat),collapse="+")))
+model_GBT <- spark.gbt(data=train_SparkR,
+                       formula=formula,
+                       type="classification",
+                       maxDepth=10,
+                       maxIter=15,
+                       stepSize=0.1,
+                       minInstancesPerNode=1,
+                       seed=1)
+```
+
+Predict training data
+```{r}
+pred_GBT_train <- predict(model_GBT,train_SparkR)
+pred_GBT_train <- unlist(lapply(as.data.frame(pred_GBT_train)[,"probability"],
+                                function(x)SparkR:::callJMethod(x,"toArray")[[2]]))
+```
+
+Predict test data
+```{r}
+pred_GBT_test <- unlist(lapply(as.data.frame(pred_GBT_test)[,"probability"],
+                               function(x)SparkR:::callJMethod(x,"toArray")[[2]]))
+```
+
+Iterate all possible cut-offs and calculate performance measures in training set
+```{r}
+m1_GBT_train <- c()
+m2_GBT_train <- c()
+lowest <- trunc(min(pred_GBT_train)*100)/100+0.01
+highest <- trunc(max(pred_GBT_train)*100)/100
+for(c in seq(lowest,highest,0.01)){
+  table_GBT_train_c <- table(Real=response_train,Predicted=ifelse(pred_GBT_train>=c,"1","0"))
+  m1_GBT_train <- c(m1_GBT_train,table_GBT_train_c[2,2]/sum(table_GBT_train_c[2,]) +
+                     table_GBT_train_c[1,1]/sum(table_GBT_train_c[1,]))
+  m2_GBT_train <- c(m2_GBT_train,sum(diag(table_GBT_train_c))/sum(table_GBT_train_c))
+}
+cutoffs_GBT_train <- quantile(pred_GBT_train,seq(0.25,1,0.25))
+quartiles_GBT_train <- ifelse(pred_GBT_train<=cutoffs_GBT_train[1],"Q1",
+                             ifelse(pred_GBT_train<=cutoffs_GBT_train[2],"Q2",
+                                    ifelse(pred_GBT_train<=cutoffs_GBT_train[3],"Q3","Q4")))
+results_optimals_train[1,"GBT"] <- max(m1_GBT_train)
+results_optimals_train[2,"GBT"] <- max(m2_GBT_train)
+results_optimals_train[3,"GBT"] <- auc(roc(response_train,pred_GBT_train))
+results_optimals_train[4,"GBT"] <- mean(response_train[quartiles_GBT_train=="Q1"]==1)
+results_optimals_train[5,"GBT"] <- mean(response_train[quartiles_GBT_train=="Q2"]==1)
+results_optimals_train[6,"GBT"] <- mean(response_train[quartiles_GBT_train=="Q3"]==1)
+results_optimals_train[7,"GBT"] <- mean(response_train[quartiles_GBT_train=="Q4"]==1)
+results_optimals_train[8,"GBT"] <- seq(lowest,highest,0.01)[which(m1_GBT_train==max(m1_GBT_train))[1]]
+results_optimals_train[9,"GBT"] <- seq(lowest,highest,0.01)[which(m2_GBT_train==max(m2_GBT_train))[1]]
+results_optimals_train[10,"GBT"] <- cutoffs_GBT_train[1]
+results_optimals_train[11,"GBT"] <- cutoffs_GBT_train[2]
+results_optimals_train[12,"GBT"] <- cutoffs_GBT_train[3]
+results_optimals_train[13,"GBT"] <- cutoffs_GBT_train[4]
+```
+
+Iterate all possible cut-offs and calculate performance measures in test set
+```{r}
+m1_GBT_test <- c()
+m2_GBT_test <- c()
+lowest <- trunc(min(pred_GBT_test)*100)/100+0.01
+highest <- trunc(max(pred_GBT_test)*100)/100
+for(c in seq(lowest,highest,0.01)){
+  table_GBT_test_c <- table(Real=response_test,Predicted=ifelse(pred_GBT_test>=c,"1","0"))
+  m1_GBT_test <- c(m1_GBT_test,table_GBT_test_c[2,2]/sum(table_GBT_test_c[2,]) +
+                    table_GBT_test_c[1,1]/sum(table_GBT_test_c[1,]))
+  m2_GBT_test <- c(m2_GBT_test,sum(diag(table_GBT_test_c))/sum(table_GBT_test_c))
+}
+cutoffs_GBT_test <- quantile(pred_GBT_test,seq(0.25,1,0.25))
+quartiles_GBT_test <- ifelse(pred_GBT_test<=cutoffs_GBT_test[1],"Q1",
+                            ifelse(pred_GBT_test<=cutoffs_GBT_test[2],"Q2",
+                                   ifelse(pred_GBT_test<=cutoffs_GBT_test[3],"Q3","Q4")))
+results_optimals_test[1,"GBT"] <- max(m1_GBT_test)
+results_optimals_test[2,"GBT"] <- max(m2_GBT_test)
+results_optimals_test[3,"GBT"] <- auc(roc(response_test,pred_GBT_test))
+results_optimals_test[4,"GBT"] <- mean(response_test[quartiles_GBT_test=="Q1"]==1)
+results_optimals_test[5,"GBT"] <- mean(response_test[quartiles_GBT_test=="Q2"]==1)
+results_optimals_test[6,"GBT"] <- mean(response_test[quartiles_GBT_test=="Q3"]==1)
+results_optimals_test[7,"GBT"] <- mean(response_test[quartiles_GBT_test=="Q4"]==1)
+results_optimals_test[8,"GBT"] <- seq(lowest,highest,0.01)[which(m1_GBT_test==max(m1_GBT_test))[1]]
+results_optimals_test[9,"GBT"] <- seq(lowest,highest,0.01)[which(m2_GBT_test==max(m2_GBT_test))[1]]
+results_optimals_test[10,"GBT"] <- cutoffs_GBT_test[1]
+results_optimals_test[11,"GBT"] <- cutoffs_GBT_test[2]
+results_optimals_test[12,"GBT"] <- cutoffs_GBT_test[3]
+results_optimals_test[13,"GBT"] <- cutoffs_GBT_test[4]
+```
+
+# 7.5 NAIVE BAYES
+
+Train the optimal model with all training set
+```{r}
+model_NB <- ml_naive_bayes(data_partitions$train,
+                           response=response,
+                           features=features_cat)
+```
+
+Predict training data
+```{r}
+pred_NB_train <- sdf_predict(data_partitions$train,model_NB)
+pred_NB_train <- data.frame(collect(pred_NB_train %>% select(probability_1)))[,"probability_1"]
+```
+
+Predict test data
+```{r}
+pred_NB_test <- sdf_predict(data_partitions$test,model_NB)
+pred_NB_test <- data.frame(collect(pred_NB_test %>% select(probability_1)))[,"probability_1"]
+```
+
+Iterate all possible cut-offs and calculate performance measures in training set
+```{r}
+m1_NB_train <- c()
+m2_NB_train <- c()
+lowest <- trunc(min(pred_NB_train)*100)/100+0.01
+highest <- trunc(max(pred_NB_train)*100)/100
+for(c in seq(lowest,highest,0.01)){
+  table_NB_train_c <- table(Real=response_train,Predicted=ifelse(pred_NB_train>=c,"1","0"))
+  m1_NB_train <- c(m1_NB_train,table_NB_train_c[2,2]/sum(table_NB_train_c[2,]) +
+                     table_NB_train_c[1,1]/sum(table_NB_train_c[1,]))
+  m2_NB_train <- c(m2_NB_train,sum(diag(table_NB_train_c))/sum(table_NB_train_c))
+}
+cutoffs_NB_train <- quantile(pred_NB_train,seq(0.25,1,0.25))
+quartiles_NB_train <- ifelse(pred_NB_train<=cutoffs_NB_train[1],"Q1",
+                             ifelse(pred_NB_train<=cutoffs_NB_train[2],"Q2",
+                                    ifelse(pred_NB_train<=cutoffs_NB_train[3],"Q3","Q4")))
+results_optimals_train[1,"NB"] <- max(m1_NB_train)
+results_optimals_train[2,"NB"] <- max(m2_NB_train)
+results_optimals_train[3,"NB"] <- auc(roc(response_train,pred_NB_train))
+results_optimals_train[4,"NB"] <- mean(response_train[quartiles_NB_train=="Q1"]==1)
+results_optimals_train[5,"NB"] <- mean(response_train[quartiles_NB_train=="Q2"]==1)
+results_optimals_train[6,"NB"] <- mean(response_train[quartiles_NB_train=="Q3"]==1)
+results_optimals_train[7,"NB"] <- mean(response_train[quartiles_NB_train=="Q4"]==1)
+results_optimals_train[8,"NB"] <- seq(lowest,highest,0.01)[which(m1_NB_train==max(m1_NB_train))[1]]
+results_optimals_train[9,"NB"] <- seq(lowest,highest,0.01)[which(m2_NB_train==max(m2_NB_train))[1]]
+results_optimals_train[10,"NB"] <- cutoffs_NB_train[1]
+results_optimals_train[11,"NB"] <- cutoffs_NB_train[2]
+results_optimals_train[12,"NB"] <- cutoffs_NB_train[3]
+results_optimals_train[13,"NB"] <- cutoffs_NB_train[4]
+```
+
+Iterate all possible cut-offs and calculate performance measures in test set
+```{r}
+m1_NB_test <- c()
+m2_NB_test <- c()
+lowest <- trunc(min(pred_NB_test)*100)/100+0.01
+highest <- trunc(max(pred_NB_test)*100)/100
+for(c in seq(lowest,highest,0.01)){
+  table_NB_test_c <- table(Real=response_test,Predicted=ifelse(pred_NB_test>=c,"1","0"))
+  m1_NB_test <- c(m1_NB_test,table_NB_test_c[2,2]/sum(table_NB_test_c[2,]) +
+                    table_NB_test_c[1,1]/sum(table_NB_test_c[1,]))
+  m2_NB_test <- c(m2_NB_test,sum(diag(table_NB_test_c))/sum(table_NB_test_c))
+}
+cutoffs_NB_test <- quantile(pred_NB_test,seq(0.25,1,0.25))
+quartiles_NB_test <- ifelse(pred_NB_test<=cutoffs_NB_test[1],"Q1",
+                            ifelse(pred_NB_test<=cutoffs_NB_test[2],"Q2",
+                                   ifelse(pred_NB_test<=cutoffs_NB_test[3],"Q3","Q4")))
+results_optimals_test[1,"NB"] <- max(m1_NB_test)
+results_optimals_test[2,"NB"] <- max(m2_NB_test)
+results_optimals_test[3,"NB"] <- auc(roc(response_test,pred_NB_test))
+results_optimals_test[4,"NB"] <- mean(response_test[quartiles_NB_test=="Q1"]==1)
+results_optimals_test[5,"NB"] <- mean(response_test[quartiles_NB_test=="Q2"]==1)
+results_optimals_test[6,"NB"] <- mean(response_test[quartiles_NB_test=="Q3"]==1)
+results_optimals_test[7,"NB"] <- mean(response_test[quartiles_NB_test=="Q4"]==1)
+results_optimals_test[8,"NB"] <- seq(lowest,highest,0.01)[which(m1_NB_test==max(m1_NB_test))[1]]
+results_optimals_test[9,"NB"] <- seq(lowest,highest,0.01)[which(m2_NB_test==max(m2_NB_test))[1]]
+results_optimals_test[10,"NB"] <- cutoffs_NB_test[1]
+results_optimals_test[11,"NB"] <- cutoffs_NB_test[2]
+results_optimals_test[12,"NB"] <- cutoffs_NB_test[3]
+results_optimals_test[13,"NB"] <- cutoffs_NB_test[4]
+```
+
+# 7.6 NEURAL NETWORK
+
+Train the optimal model with all training set
+```{r}
+layer_output <- 2
+layer_hidden_1 <- 12
+layer_hidden_2 <- 4
+layer_input <- sum(sapply(as.data.frame(train_SparkR[,features_cat]),function(x)length(unique(x))-1),
+                   length(features_num))
+formula <- as.formula(paste(response,"~",paste(c(features_num,features_cat),collapse="+")))
+model_NN <- spark.mlp(train_SparkR,
+                      formula=formula,
+                      layers=c(layer_input,layer_hidden_1,layer_hidden_2,layer_output),
+                      seed=1)
+```
+
+Predict training data
+```{r}
+pred_NN_train <- predict(model_NN,train_SparkR)
+pred_NN_train <- unlist(lapply(as.data.frame(pred_NN_train)[,"probability"],
+                               function(x)SparkR:::callJMethod(x,"toArray")[[2]]))
+```
+
+Predict test data
+```{r}
+pred_NN_test <- predict(model_NN,test_SparkR)
+pred_NN_test <- unlist(lapply(as.data.frame(pred_NN_test)[,"probability"],
+                              function(x)SparkR:::callJMethod(x,"toArray")[[2]]))
+```
+
+Iterate all possible cut-offs and calculate performance measures in training set
+```{r}
+m1_NN_train <- c()
+m2_NN_train <- c()
+lowest <- trunc(min(pred_NN_train)*100)/100+0.01
+highest <- trunc(max(pred_NN_train)*100)/100
+for(c in seq(lowest,highest,0.01)){
+  table_NN_train_c <- table(Real=response_train,Predicted=ifelse(pred_NN_train>=c,"1","0"))
+  m1_NN_train <- c(m1_NN_train,table_NN_train_c[2,2]/sum(table_NN_train_c[2,]) +
+                     table_NN_train_c[1,1]/sum(table_NN_train_c[1,]))
+  m2_NN_train <- c(m2_NN_train,sum(diag(table_NN_train_c))/sum(table_NN_train_c))
+}
+cutoffs_NN_train <- quantile(pred_NN_train,seq(0.25,1,0.25))
+quartiles_NN_train <- ifelse(pred_NN_train<=cutoffs_NN_train[1],"Q1",
+                             ifelse(pred_NN_train<=cutoffs_NN_train[2],"Q2",
+                                    ifelse(pred_NN_train<=cutoffs_NN_train[3],"Q3","Q4")))
+results_optimals_train[1,"NN"] <- max(m1_NN_train)
+results_optimals_train[2,"NN"] <- max(m2_NN_train)
+results_optimals_train[3,"NN"] <- auc(roc(response_train,pred_NN_train))
+results_optimals_train[4,"NN"] <- mean(response_train[quartiles_NN_train=="Q1"]==1)
+results_optimals_train[5,"NN"] <- mean(response_train[quartiles_NN_train=="Q2"]==1)
+results_optimals_train[6,"NN"] <- mean(response_train[quartiles_NN_train=="Q3"]==1)
+results_optimals_train[7,"NN"] <- mean(response_train[quartiles_NN_train=="Q4"]==1)
+results_optimals_train[8,"NN"] <- seq(lowest,highest,0.01)[which(m1_NN_train==max(m1_NN_train))[1]]
+results_optimals_train[9,"NN"] <- seq(lowest,highest,0.01)[which(m2_NN_train==max(m2_NN_train))[1]]
+results_optimals_train[10,"NN"] <- cutoffs_NN_train[1]
+results_optimals_train[11,"NN"] <- cutoffs_NN_train[2]
+results_optimals_train[12,"NN"] <- cutoffs_NN_train[3]
+results_optimals_train[13,"NN"] <- cutoffs_NN_train[4]
+```
+
+Iterate all possible cut-offs and calculate performance measures in test set
+```{r}
+m1_NN_test <- c()
+m2_NN_test <- c()
+lowest <- trunc(min(pred_NN_test)*100)/100+0.01
+highest <- trunc(max(pred_NN_test)*100)/100
+for(c in seq(lowest,highest,0.01)){
+  table_NN_test_c <- table(Real=response_test,Predicted=ifelse(pred_NN_test>=c,"1","0"))
+  m1_NN_test <- c(m1_NN_test,table_NN_test_c[2,2]/sum(table_NN_test_c[2,]) +
+                    table_NN_test_c[1,1]/sum(table_NN_test_c[1,]))
+  m2_NN_test <- c(m2_NN_test,sum(diag(table_NN_test_c))/sum(table_NN_test_c))
+}
+cutoffs_NN_test <- quantile(pred_NN_test,seq(0.25,1,0.25))
+quartiles_NN_test <- ifelse(pred_NN_test<=cutoffs_NN_test[1],"Q1",
+                            ifelse(pred_NN_test<=cutoffs_NN_test[2],"Q2",
+                                   ifelse(pred_NN_test<=cutoffs_NN_test[3],"Q3","Q4")))
+results_optimals_test[1,"NN"] <- max(m1_NN_test)
+results_optimals_test[2,"NN"] <- max(m2_NN_test)
+results_optimals_test[3,"NN"] <- auc(roc(response_test,pred_NN_test))
+results_optimals_test[4,"NN"] <- mean(response_test[quartiles_NN_test=="Q1"]==1)
+results_optimals_test[5,"NN"] <- mean(response_test[quartiles_NN_test=="Q2"]==1)
+results_optimals_test[6,"NN"] <- mean(response_test[quartiles_NN_test=="Q3"]==1)
+results_optimals_test[7,"NN"] <- mean(response_test[quartiles_NN_test=="Q4"]==1)
+results_optimals_test[8,"NN"] <- seq(lowest,highest,0.01)[which(m1_NN_test==max(m1_NN_test))[1]]
+results_optimals_test[9,"NN"] <- seq(lowest,highest,0.01)[which(m2_NN_test==max(m2_NN_test))[1]]
+results_optimals_test[10,"NN"] <- cutoffs_NN_test[1]
+results_optimals_test[11,"NN"] <- cutoffs_NN_test[2]
+results_optimals_test[12,"NN"] <- cutoffs_NN_test[3]
+results_optimals_test[13,"NN"] <- cutoffs_NN_test[4]
+```
