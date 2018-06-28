@@ -1,5 +1,5 @@
-# Guide-to-Spark-Machine-Learning-for-credit-scoring
-This is the thesis of my bachelor's degree in Statistics at UPC-UB (Barcelona, Spain).
+I am Álvaro Orgaz Expósito, a statistics student at UPC-UB (Barcelona, Spain) and this is my bachelor's degree thesis.
+
 TITLE: Guide to Spark Machine Learning for credit scoring
 AUTHOR: Álvaro Orgaz Expósito
 ADVISORS: Ana María Pérez Marín, Catalina Bolancé Losilla
