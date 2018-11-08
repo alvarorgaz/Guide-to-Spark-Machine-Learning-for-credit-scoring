@@ -15,3 +15,7 @@ This bachelor’s degree thesis aims to develop a predictive analytics guide for
 The main objectives of the theoretical part are introducing the credit sector and doing research about the theory of most common algorithms used nowadays in the areas of *machine learning*, *artificial intelligence* and predictive analytics. The main aims of the practical part are applying the studied algorithms for predicting the probability of default with a dataset of customer characteristics and comparing the predictive behaviour between models.
 
 In conclusion, this thesis will provide the necessary information for developing a predictive analytics project, from the business problem definition to the application of the optimal model.
+
+**Code:**
+
+The project has been developed in R mainly using libraries *sparklyr* and *SparkR*.
