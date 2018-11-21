@@ -1,7 +1,3 @@
----
-output: rmarkdown::github_document
----
-
 # 1. INSTALLATION AND CONNECTION TO SPARK
 
 Notes:
