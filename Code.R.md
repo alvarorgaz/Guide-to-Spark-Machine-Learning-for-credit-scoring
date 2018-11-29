@@ -1,11 +1,8 @@
 # 1. INSTALLATION AND CONNECTION TO SPARK
 
 Notes:
-
 - **N1.** As the package *SparkR* is removed from R CRAN, download the package file *SparkR_2.3.0.tar.gz* at the link: https://cran.r-project.org/src/contrib/Archive/SparkR/
-
 - **N2.** You will need to have installed the software Java and the firewall unblocked.
-
 - **N3.** The function *sparkR.init* of the package *SparkR* will install the latest version of *Spark* in your computer (if not installed), then it is not necessary that you do it manually. It will be used too by the function *spark_connect* of the package *sparklyr*.
 
 Mute warnings
@@ -49,13 +46,11 @@ sc_sparklyr <- spark_connect(master="local")
 ```
 
 Notes:
-
 - **N4.** You can connect to both local instances of *Spark* as well as remote *Spark* clusters but we will connect to a local. The returned *Spark* connection (sc) provides a remote data source to the *Spark* cluster. Once you have connected to *Spark*, you will be able to browse the tables contained in the *Spark* cluster and also, in the case of the package *sparklyr*, preview *Spark* data frames using the RStudio data viewer.
 
 # 2. DATA LOADING
 
 Notes:
-
 - **N5.** You can read and write data in CSV, JSON, and Parquet formats. Data can be stored in remote clusters or on the local cluster, and it returns a reference to a *Spark* data frame.
 
 Load the data specifying the type of variables: numerical (*double*) or categorical (*character*)
@@ -137,9 +132,7 @@ for(i in categorical[-which(categorical=="Contract_ID")]){
 # 4. DATA PRE-PROCESSING
 
 Modify missing values found in the analysis:
-
 - in numerical variables by 0
-
 - in categorical variables by *Missing*
 
 ```{r}
@@ -221,7 +214,6 @@ data <- data %>% mutate(
 ```
 
 Notes:
-
 - **N6.** In the case that you need to convert all categorical variables to numerical with an integer index, the necessary *Spark R* code could be:
 
 ```{r}
@@ -272,7 +264,6 @@ for(i in categorical[-which(categorical=="Contract_ID")]){
 ```
 
 Notes:
-
 - **N7.** The function *sdf_partition* returns a list with as much *Spark* datasets as you define. The fold weights are the probabilities of being in every fold for the observations, and they do not mean the fold size.
 
 # 6. PROTOCOL OF MODEL VALIDATION PHASE 2: Find the best parametrization of every model with training set
@@ -798,13 +789,9 @@ Sys.time()
 ```
 
 Notes:
-
 - **N8.** In the Multilayer Perceptron Neural Network, the number of neurons by layers are:
-    
-    - *output layer:* the # of classes in the response.
-    
+    - *output layer:* the # of classes in the response.    
     - *hidden layers:* tunning parameters.
-
     - *input layer:* as much nodes as input variables. It means the # of numerical variables, plus the # of unique categories in all categorical variables, less the # of categorical features (because the model creates, for every categorical feature, dummies for every category except one for avoiding linear dependence).
     
 # 7. PROTOCOL OF MODEL VALIDATION PHASE 3: Train models with optimal parametrizations
