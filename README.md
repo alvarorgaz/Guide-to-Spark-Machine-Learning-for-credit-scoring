@@ -1,6 +1,6 @@
 # Guide to Spark Machine Learning for credit scoring
 
-**Author:** I am Álvaro Orgaz Expósito, a statistics student at UPC-UB (Barcelona, Spain) and this is my bachelor's degree thesis.
+**Author:** I am Álvaro Orgaz Expósito, a Statistics student at UPC-UB (Barcelona, Spain) and this is my bachelor's degree thesis.
 
 **Advisors:** Ana María Pérez Marín, Catalina Bolancé Losilla
 
